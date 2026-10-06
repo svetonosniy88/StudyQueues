@@ -42,8 +42,14 @@ def desktop(tmp_path, app, monkeypatch):
     assert not errors, [str(e[1]) for e in errors]
 
 
-def wait():
+def wait(window):
     QTest.qWait(260)
+    # Cloud runners may deliver animation frames later than the nominal duration.
+    for _ in range(200):
+        if not window.busy:
+            break
+        QTest.qWait(10)
+    assert not window.busy, "Completion animation did not finish"
     QApplication.processEvents()
 
 
@@ -303,12 +309,12 @@ def test_keyboard_edit_add_nested_move_work_undo_finish_reopen(desktop, app):
     QTest.mouseClick(check, Qt.LeftButton, pos=QPoint(8, check.height() // 2))
     assert window.busy
     window.complete("university", children[1].id)  # Rapid second click is ignored.
-    wait()
+    wait(window)
     assert len(window.work_checkboxes) == 2 and window.work_checkboxes[children[0].id].isChecked()
     assert window.session.counts == (0, 1)
     check = window.work_checkboxes[children[1].id]
     QTest.mouseClick(check, Qt.LeftButton, pos=QPoint(8, check.height() // 2))
-    wait()
+    wait(window)
     assert window.current_task.text == "Edited"
     assert window.session.counts == (1, 2)
     QTest.keyClick(window, Qt.Key_Z, Qt.ControlModifier)
@@ -322,7 +328,7 @@ def test_keyboard_edit_add_nested_move_work_undo_finish_reopen(desktop, app):
     QTest.mouseClick(window.pause_button, Qt.LeftButton)
     assert window.session.running
     window.complete("university", parent_id)
-    wait()
+    wait(window)
     window.finish_session()
     assert window.session is None and window.pages.currentWidget() == window.stats
     history = window.state.history()
@@ -335,7 +341,7 @@ def test_keyboard_edit_add_nested_move_work_undo_finish_reopen(desktop, app):
     reopened.duration.setValue(25)
     reopened.start_session()
     reopened.complete("self_development", reopened.current_task.id)
-    wait()
+    wait(reopened)
     reopened.finish_session()
     assert len(reopened.state.history()) == 2
     reopened.close()
@@ -346,7 +352,7 @@ def test_external_edit_shows_error_then_reload_resets_undo(desktop):
     window.start_session()
     first = window.current_task.id
     window.complete("university", first)
-    wait()
+    wait(window)
     with paths["university"].open("a", encoding="utf-8") as stream:
         stream.write("- [ ] Внешняя новая\n")
     window.undo()
@@ -390,7 +396,7 @@ def test_close_reopen_restore_paused(desktop):
     window, paths = desktop
     window.start_session()
     window.complete("university", window.current_task.id)
-    wait()
+    wait(window)
     ident = window.session.id
     window.close()
     reopened = Window(window.state.directory, paths)
@@ -460,7 +466,7 @@ def test_long_title_is_not_clipped_and_refresh_hides_old_controls(desktop, app):
     store.edit(store.tasks[0].id, text)
     window.resize(820, 650)
     window.start_session()
-    wait()
+    wait(window)
     title = window.task_title
     assert title.height() >= title.heightForWidth(title.width())
     old_timer = window.timer_label
@@ -507,7 +513,7 @@ def test_wrapped_child_indicator_click_scroll_preserved_and_next_task_reset(desk
     for i in range(16):
         store.add(f"Подпункт {i}: длинная русская формулировка, которая должна переноситься и оставаться доступной для нажатия по всей строке", root)
     window.start_session()
-    wait()
+    wait(window)
     assert window.work_card.width() < window.work.width() * 0.65
     first = next(iter(window.work_checkboxes.values()))
     assert first.caption.height() >= first.caption.heightForWidth(first.caption.width())
@@ -527,15 +533,15 @@ def test_wrapped_child_indicator_click_scroll_preserved_and_next_task_reset(desk
     check = next(c for c in window.work_checkboxes.values()
                  if 0 <= c.mapTo(viewport, QPoint(0, c.height() // 2)).y() <= viewport.height())
     QTest.mouseClick(check, Qt.LeftButton, pos=QPoint(check.width() // 2, check.height() // 2))
-    wait()
+    wait(window)
     assert window.session.counts == (0, 1)
     assert window.task_scroll.verticalScrollBar().value() == position
     assert window.timer_label.mapTo(window.work, QPoint()).y() == timer_y
     window.undo()
-    wait()
+    wait(window)
     assert window.task_scroll.verticalScrollBar().value() == position
     window.complete("university", root)
-    wait()
+    wait(window)
     assert window.current_task.id != root
     assert window.task_scroll.verticalScrollBar().value() == 0
 
@@ -544,7 +550,7 @@ def test_history_star_filter_remove_and_failure_do_not_change_queue(desktop, app
     window, paths = desktop
     window.start_session()
     window.complete("university", window.current_task.id)
-    wait()
+    wait(window)
     window.finish_session()
     ident = window.state.history()[0]["id"]
     source = paths["university"].read_bytes()
@@ -898,7 +904,7 @@ def test_overview_completed_checkbox_reopens_without_rewriting_history(desktop, 
     window.start_session()
     ident = window.current_task.id
     window.complete('university', ident)
-    wait()
+    wait(window)
     window.finish_session()
     history = (window.state.directory / 'sessions.json').read_bytes()
     window.show_overview()
@@ -925,7 +931,7 @@ def test_work_navigation_skip_back_reopen_and_recomplete_counts_once(desktop):
     QTest.mouseClick(window.back_button, Qt.LeftButton)
     assert window.current_task.id == root
     QTest.mouseClick(window.work_root_checkbox, Qt.LeftButton)
-    wait()
+    wait(window)
     assert window.session.counts == (1, 2)
     QTest.mouseClick(window.back_button, Qt.LeftButton)
     assert window.work_root_checkbox.isChecked() and not window.complete_button.isEnabled()
@@ -934,13 +940,13 @@ def test_work_navigation_skip_back_reopen_and_recomplete_counts_once(desktop):
     assert not store.by_id[root].done and not store.by_id[child].done
     assert store.by_id[root].children[1].done and window.session.counts == (0, 1)
     QTest.mouseClick(window.complete_button, Qt.LeftButton)
-    wait()
+    wait(window)
     QTest.mouseClick(window.back_button, Qt.LeftButton)
     QTest.mouseClick(window.work_root_checkbox, Qt.LeftButton)
     assert all(not t.done for t in [store.by_id[root], *store.by_id[root].children])
     assert window.session.counts == (0, 0)
     QTest.mouseClick(window.complete_button, Qt.LeftButton)
-    wait()
+    wait(window)
     window.finish_session()
     assert len(window.state.history()[0]['completed']) == 3
 
@@ -951,7 +957,7 @@ def test_reopen_snapshot_failures_restore_marks_and_counts(desktop, monkeypatch,
     window.start_session()
     root = window.current_task.id
     window.complete('university', root)
-    wait()
+    wait(window)
     QTest.mouseClick(window.back_button, Qt.LeftButton)
     write = window.state.write
     commit = window.stores['university']._commit
@@ -1128,7 +1134,7 @@ def test_long_children_are_lazy_and_bounded_in_overview_but_all_visible_in_work(
     assert not hasattr(window.work_card, 'child_pagers')
     assert all(row.disclosure is None for row in window.work_rows.values())
     window.complete('university', 'root')
-    wait()
+    wait(window)
     store = window.stores['university']
     assert all(child.done for child in store.by_id['root'].children)
     assert window.session.counts == (1, 84)  # c0 was completed before this session
@@ -1173,7 +1179,7 @@ def test_adding_child_to_completed_task_opens_parent_and_removes_its_credit(desk
     window.start_session()
     root = window.current_task.id
     window.complete('university', root)
-    wait()
+    wait(window)
     window.browse_task(-1)
     window.add_task('university', 'Дополнительный пункт', root)
     assert not window.current_task.completed and window.session.counts == (0, 0)
@@ -1257,7 +1263,7 @@ def test_work_delete_empty_child_and_parent_updates_current_credit(desktop):
     child = store.by_id[root].children[0].id
     window.start_session()
     window.complete('university', root)
-    wait()
+    wait(window)
     window.browse_task(-1)
     assert window.session.counts == (1, 2)
     window.work_editors[child].setFocus()
@@ -1278,7 +1284,7 @@ def test_delete_write_failure_and_post_write_recovery(desktop, monkeypatch, fail
     window.start_session()
     root = window.current_task.id
     window.complete('university', root)
-    wait()
+    wait(window)
     window.browse_task(-1)
     write = window.state.write
     commit = window.stores['university']._commit
@@ -1305,7 +1311,7 @@ def test_overview_delete_after_clearing_text_keeps_old_history(desktop, app):
     window.start_session()
     root = window.current_task.id
     window.complete('university', root)
-    wait()
+    wait(window)
     window.finish_session()
     history = (window.state.directory / 'sessions.json').read_bytes()
     window.show_overview()
