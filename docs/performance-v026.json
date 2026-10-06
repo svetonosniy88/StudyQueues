@@ -1,0 +1,247 @@
+{
+  "backend": "Qt offscreen",
+  "repeats": 3,
+  "queues": [
+    {
+      "roots_per_queue": 25,
+      "children_per_root": 3,
+      "total_items_both_queues": 200,
+      "open_ms": 295.5,
+      "show_completed_ms": 51.7,
+      "hide_completed_ms": 7.0,
+      "expand_children_ms": 21.4,
+      "collapse_children_ms": 11.0,
+      "to_empty_stats_ms": 7.0,
+      "back_to_overview_ms": 8.0,
+      "cached_stats_ms": 1.9,
+      "start_work_ms": 40.6,
+      "render_work_ms": 37.9,
+      "add_work_task_ms": 51.6,
+      "raw_open_ms": [
+        339.8,
+        294.3,
+        295.5
+      ],
+      "raw_samples": [
+        {
+          "show_completed_ms": 51.7,
+          "hide_completed_ms": 7.0,
+          "expand_children_ms": 21.4,
+          "collapse_children_ms": 9.6,
+          "to_empty_stats_ms": 7.3,
+          "back_to_overview_ms": 8.0,
+          "cached_stats_ms": 1.9,
+          "start_work_ms": 45.7,
+          "render_work_ms": 37.9,
+          "add_work_task_ms": 51.6
+        },
+        {
+          "show_completed_ms": 45.7,
+          "hide_completed_ms": 6.5,
+          "expand_children_ms": 20.2,
+          "collapse_children_ms": 11.5,
+          "to_empty_stats_ms": 6.3,
+          "back_to_overview_ms": 8.0,
+          "cached_stats_ms": 1.9,
+          "start_work_ms": 40.6,
+          "render_work_ms": 39.3,
+          "add_work_task_ms": 48.7
+        },
+        {
+          "show_completed_ms": 59.4,
+          "hide_completed_ms": 8.6,
+          "expand_children_ms": 21.8,
+          "collapse_children_ms": 11.0,
+          "to_empty_stats_ms": 7.0,
+          "back_to_overview_ms": 9.8,
+          "cached_stats_ms": 2.2,
+          "start_work_ms": 40.1,
+          "render_work_ms": 37.0,
+          "add_work_task_ms": 55.8
+        }
+      ]
+    },
+    {
+      "roots_per_queue": 100,
+      "children_per_root": 3,
+      "total_items_both_queues": 800,
+      "open_ms": 385.5,
+      "show_completed_ms": 64.7,
+      "hide_completed_ms": 7.5,
+      "expand_children_ms": 20.0,
+      "collapse_children_ms": 9.5,
+      "to_empty_stats_ms": 7.2,
+      "back_to_overview_ms": 9.0,
+      "cached_stats_ms": 2.1,
+      "start_work_ms": 45.1,
+      "render_work_ms": 45.2,
+      "add_work_task_ms": 59.3,
+      "raw_open_ms": [
+        367.8,
+        396.6,
+        385.5
+      ],
+      "raw_samples": [
+        {
+          "show_completed_ms": 54.3,
+          "hide_completed_ms": 7.5,
+          "expand_children_ms": 19.3,
+          "collapse_children_ms": 9.2,
+          "to_empty_stats_ms": 7.2,
+          "back_to_overview_ms": 9.6,
+          "cached_stats_ms": 2.6,
+          "start_work_ms": 45.1,
+          "render_work_ms": 45.2,
+          "add_work_task_ms": 61.2
+        },
+        {
+          "show_completed_ms": 70.6,
+          "hide_completed_ms": 9.6,
+          "expand_children_ms": 20.0,
+          "collapse_children_ms": 10.9,
+          "to_empty_stats_ms": 6.6,
+          "back_to_overview_ms": 9.0,
+          "cached_stats_ms": 2.1,
+          "start_work_ms": 53.7,
+          "render_work_ms": 51.4,
+          "add_work_task_ms": 59.3
+        },
+        {
+          "show_completed_ms": 64.7,
+          "hide_completed_ms": 7.0,
+          "expand_children_ms": 20.5,
+          "collapse_children_ms": 9.5,
+          "to_empty_stats_ms": 8.0,
+          "back_to_overview_ms": 8.0,
+          "cached_stats_ms": 1.7,
+          "start_work_ms": 41.4,
+          "render_work_ms": 38.3,
+          "add_work_task_ms": 55.5
+        }
+      ]
+    },
+    {
+      "roots_per_queue": 250,
+      "children_per_root": 3,
+      "total_items_both_queues": 2000,
+      "open_ms": 389.2,
+      "show_completed_ms": 59.6,
+      "hide_completed_ms": 7.4,
+      "expand_children_ms": 20.5,
+      "collapse_children_ms": 9.7,
+      "to_empty_stats_ms": 7.1,
+      "back_to_overview_ms": 7.7,
+      "cached_stats_ms": 1.8,
+      "start_work_ms": 41.6,
+      "render_work_ms": 37.3,
+      "add_work_task_ms": 64.1,
+      "raw_open_ms": [
+        398.6,
+        366.6,
+        389.2
+      ],
+      "raw_samples": [
+        {
+          "show_completed_ms": 68.4,
+          "hide_completed_ms": 8.6,
+          "expand_children_ms": 21.0,
+          "collapse_children_ms": 9.7,
+          "to_empty_stats_ms": 7.1,
+          "back_to_overview_ms": 7.7,
+          "cached_stats_ms": 2.0,
+          "start_work_ms": 43.5,
+          "render_work_ms": 37.6,
+          "add_work_task_ms": 69.4
+        },
+        {
+          "show_completed_ms": 55.7,
+          "hide_completed_ms": 7.4,
+          "expand_children_ms": 20.5,
+          "collapse_children_ms": 9.2,
+          "to_empty_stats_ms": 6.5,
+          "back_to_overview_ms": 7.3,
+          "cached_stats_ms": 1.8,
+          "start_work_ms": 41.3,
+          "render_work_ms": 37.2,
+          "add_work_task_ms": 62.0
+        },
+        {
+          "show_completed_ms": 59.6,
+          "hide_completed_ms": 7.2,
+          "expand_children_ms": 20.3,
+          "collapse_children_ms": 10.3,
+          "to_empty_stats_ms": 7.8,
+          "back_to_overview_ms": 7.9,
+          "cached_stats_ms": 1.8,
+          "start_work_ms": 41.6,
+          "render_work_ms": 37.3,
+          "add_work_task_ms": 64.1
+        }
+      ]
+    },
+    {
+      "roots_per_queue": 1,
+      "children_per_root": 50,
+      "total_items_both_queues": 102,
+      "open_ms": 38.1,
+      "show_completed_ms": 1.5,
+      "hide_completed_ms": 0.6,
+      "expand_children_ms": 94.1,
+      "collapse_children_ms": 10.9,
+      "to_empty_stats_ms": 6.5,
+      "back_to_overview_ms": 3.4,
+      "cached_stats_ms": 1.4,
+      "start_work_ms": 336.9,
+      "render_work_ms": 341.4,
+      "add_work_task_ms": 344.1,
+      "raw_open_ms": [
+        45.6,
+        35.8,
+        38.1
+      ],
+      "raw_samples": [
+        {
+          "show_completed_ms": 1.5,
+          "hide_completed_ms": 0.6,
+          "expand_children_ms": 109.2,
+          "collapse_children_ms": 11.8,
+          "to_empty_stats_ms": 7.1,
+          "back_to_overview_ms": 4.4,
+          "cached_stats_ms": 1.7,
+          "start_work_ms": 353.2,
+          "render_work_ms": 361.5,
+          "add_work_task_ms": 336.6
+        },
+        {
+          "show_completed_ms": 1.2,
+          "hide_completed_ms": 0.5,
+          "expand_children_ms": 94.1,
+          "collapse_children_ms": 9.1,
+          "to_empty_stats_ms": 6.5,
+          "back_to_overview_ms": 3.3,
+          "cached_stats_ms": 1.4,
+          "start_work_ms": 334.0,
+          "render_work_ms": 338.5,
+          "add_work_task_ms": 344.1
+        },
+        {
+          "show_completed_ms": 1.6,
+          "hide_completed_ms": 1.1,
+          "expand_children_ms": 93.0,
+          "collapse_children_ms": 10.9,
+          "to_empty_stats_ms": 5.8,
+          "back_to_overview_ms": 3.4,
+          "cached_stats_ms": 1.3,
+          "start_work_ms": 336.9,
+          "render_work_ms": 341.4,
+          "add_work_task_ms": 352.2
+        }
+      ]
+    }
+  ],
+  "history": {
+    "sessions": 500,
+    "first_stats_ms": 830.6,
+    "cached_stats_ms": 16.9
+  }
+}

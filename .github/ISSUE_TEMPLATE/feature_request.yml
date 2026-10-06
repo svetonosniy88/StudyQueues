@@ -1,0 +1,17 @@
+name: Предложить улучшение
+description: Сценарий использования и желаемое поведение.
+title: '[Идея] '
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: В какой ситуации это нужно?
+      description: Опишите неудобство на конкретном примере.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Что хотелось бы изменить?
+    validations:
+      required: true
