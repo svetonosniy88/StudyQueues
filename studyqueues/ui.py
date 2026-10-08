@@ -105,6 +105,7 @@ class Window(QMainWindow):
         self.stores = {}
         self.load_errors = {}
         self.selected = "university"
+        self.start_task = None
         self.session = None
         self.busy = False
         self.animations = []
@@ -269,6 +270,7 @@ class Window(QMainWindow):
             return
         if not self.flush_overview_edits():
             return
+        self.validate_start_task()
         self.overview_dirty = False
         if hasattr(self, "queue_counts"):
             self.sync_overview()
@@ -482,6 +484,7 @@ class Window(QMainWindow):
                 if group is None:
                     group = self.create_task_group(key, task, body)
                     body.all_groups[task.id] = group
+                self.style_start_task(key, task.id, group)
                 if index >= body.rows.count() or body.rows.itemAt(index).widget() is not group:
                     body.rows.removeWidget(group)
                     body.rows.insertWidget(index, group)
@@ -537,6 +540,9 @@ class Window(QMainWindow):
         rows = QVBoxLayout(group)
         rows.setContentsMargins(4, 4, 4, 4)
         rows.setSpacing(2)
+        group.start_hint = label("С неё начнётся занятие", "startTaskHint")
+        rows.addWidget(group.start_hint)
+        self.style_start_task(key, task.id, group)
         rows.addWidget(self.task_row(key, task, body))
         children = self.visible_children(task)
         for child in children:
@@ -683,6 +689,9 @@ class Window(QMainWindow):
         return row
 
     def select_queue(self, key):
+        if self.start_task and self.start_task["queue"] != key:
+            self.start_task = None
+            self.update_start_task_highlight()
         self.selected = key
         self.launch_title.setText(NAMES[key])
         for queue, card in self.queue_cards.items():
@@ -693,6 +702,47 @@ class Window(QMainWindow):
             control.setEnabled(queue != key)
             control.setCursor(Qt.ArrowCursor if queue == key else Qt.PointingHandCursor)
         self.update_start_button()
+
+    def style_start_task(self, key, ident, group):
+        chosen = bool(self.start_task and self.start_task["queue"] == key and self.start_task["id"] == ident)
+        group.start_hint.setVisible(chosen)
+        if group.property("startSelected") != chosen:
+            group.setProperty("startSelected", chosen)
+            group.style().unpolish(group)
+            group.style().polish(group)
+            group.update()
+
+    def update_start_task_highlight(self):
+        for key, body in getattr(self, "task_lists", {}).items():
+            for ident, group in body.all_groups.items():
+                self.style_start_task(key, ident, group)
+
+    def validate_start_task(self):
+        if not self.start_task:
+            return True
+        store = self.stores.get(self.start_task["queue"])
+        task = store.by_id.get(self.start_task["id"]) if store else None
+        if store and str(store.path) == self.start_task["path"] and task and not task.parent_id and not task.completed:
+            return True
+        self.start_task = None
+        self.update_start_task_highlight()
+        self.notify("Выбранная задача больше недоступна. Выберите задачу для занятия заново.", True)
+        return False
+
+    def choose_start_task(self, key, ident):
+        if self.busy or self.session or self.recovery or not self.flush_overview_edits():
+            return
+        store = self.stores.get(key)
+        task = store.by_id.get(ident) if store else None
+        if not task or task.parent_id or task.completed:
+            return
+        self.select_queue(key)
+        self.start_task = {"queue": key, "id": ident, "path": str(store.path)}
+        self.update_start_task_highlight()
+
+    def clear_start_task(self):
+        self.start_task = None
+        self.update_start_task_highlight()
 
     def choose_path(self, key):
         file, _ = QFileDialog.getOpenFileName(self, "Выберите очередь", str(Path(self.settings.get("paths", {}).get(key, str(Path.home()))).parent), "Markdown (*.md)")
@@ -716,6 +766,7 @@ class Window(QMainWindow):
             if self.session:
                 self.session.last_completion = None
             self._load_queues()
+            valid_start = self.validate_start_task()
             if self.session:
                 self.reconcile_results()
                 self.checkpoint()
@@ -726,7 +777,7 @@ class Window(QMainWindow):
                 self.render_work()
             if self.load_errors:
                 self.notify("\n".join(self.load_errors.values()), True)
-            else:
+            elif valid_start:
                 self.notify("Очереди обновлены.")
         self.safe(action)
 
@@ -742,8 +793,11 @@ class Window(QMainWindow):
                 raise QueueError("Сначала подключите файл очереди.")
             current = getattr(self, "current_task", None)
             after = current.id if parent is None and self.session and self.session.queue == key and self.pages.currentWidget() == self.work and current else None
-            store.add(text, parent, after_id=after, at_start=parent is None and not in_work)
+            added_id = store.add(text, parent, after_id=after, at_start=parent is None and not in_work)
             committed = True
+            if in_work and parent is None and self.session.queue == key and self.session.at_queue_end:
+                self.session.view_task_id = added_id
+                self.session.at_queue_end = False
             if not in_work:
                 if parent is None:
                     self.queue_windows[key] = QueueWindow()
@@ -885,13 +939,14 @@ class Window(QMainWindow):
             replacement = None
             if not task.parent_id:
                 index = store.tasks.index(task)
-                neighbors = store.tasks[index + 1:] + list(reversed(store.tasks[:index]))
+                neighbors = store.tasks[index + 1:]
                 replacement = neighbors[0].id if neighbors else None
             store.delete(ident)
             committed = True
             if self.session and self.session.queue == key:
                 if self.session.view_task_id == ident:
                     self.session.view_task_id = replacement
+                    self.session.at_queue_end = replacement is None
                 if self.work_draft and self.work_draft["parent_id"] == ident:
                     self.work_draft = None
                 self.session.last_completion = None
@@ -927,6 +982,13 @@ class Window(QMainWindow):
         menu.setObjectName("taskActions")
         menu.setAttribute(Qt.WA_DeleteOnClose)
         if not task.parent_id:
+            if self.pages.currentWidget() == self.overview:
+                chosen = bool(self.start_task and self.start_task["queue"] == key and self.start_task["id"] == ident)
+                select = menu.addAction("Сбросить выбор" if chosen else "Выбрать для занятия",
+                                        self.clear_start_task if chosen else lambda: self.choose_start_task(key, ident))
+                select.setObjectName("startTaskAction")
+                select.setEnabled(not task.completed and not self.session and not self.recovery)
+                menu.addSeparator()
             menu.addAction("Добавить подпункт", lambda: self.show_work_draft(ident) if self.pages.currentWidget() == self.work else self.add_child(key, ident))
             menu.addSeparator()
         action = menu.addAction("Удалить подпункт" if task.parent_id else "Удалить задачу и подпункты" if task.children else "Удалить задачу", lambda: self.delete_task(key, ident))
@@ -1004,6 +1066,9 @@ class Window(QMainWindow):
                 raise StateError("Уже есть активное занятие.")
             store = self.stores[self.selected]
             store.load()
+            if not self.validate_start_task():
+                self.refresh_overview()
+                return
             if not store.active:
                 raise QueueError("В очереди нет невыполненных задач.")
             if self.recovery:
@@ -1014,11 +1079,13 @@ class Window(QMainWindow):
             self.settings["minutes"] = minutes
             self.state.write("settings.json", self.settings)
             self.session = Session(self.selected, store.path, minutes)
+            self.session.view_task_id = self.start_task["id"] if self.start_task else store.active[0].id
             try:
                 self.checkpoint()
             except StateError:
                 self.session = None
                 raise
+            self.clear_start_task()
             self.pages.setCurrentWidget(self.work)
             self.sidebar.hide()
             self.render_work()
@@ -1042,11 +1109,15 @@ class Window(QMainWindow):
                 if all(c["id"] in store.by_id and store.by_id[c["id"]].text == c["text"] and store.by_id[c["id"]].done == c[expected] for c in changes):
                     if pending["kind"] == "complete":
                         session.register(Completion(changes))
-                        if any(c["parent_id"] is None for c in changes):
-                            session.view_task_id = None
+                        root = next((c["id"] for c in changes if c["parent_id"] is None), None)
+                        if root:
+                            self.advance_after_completion(root, session=session, store=store)
                     else:
                         for c in changes:
                             session.completed.pop(c["id"], None)
+                        if pending["kind"] == "undo":
+                            session.view_task_id = next(c["id"] if c["parent_id"] is None else c["parent_id"] for c in changes)
+                            session.at_queue_end = False
                 session.pending = None
             session.last_completion = None
             settings = {**self.settings, "paths": {**self.settings["paths"], session.queue: session.path}}
@@ -1096,11 +1167,11 @@ class Window(QMainWindow):
         position = self.session.view_task_position
         if task is None and self.session.view_task_id and store and position and position["fingerprint"] == store.fingerprint and position["index"] < len(store.tasks):
             task = store.tasks[position["index"]]
-        if task is None or task.parent_id:
+        if not self.session.at_queue_end and (task is None or task.parent_id):
             task = store.active[0] if store and store.active else None
         self.session.view_task_id = task.id if task else None
         heading = QHBoxLayout()
-        heading.addWidget(label("СЕЙЧАС В РАБОТЕ" if task and not task.completed else "ВЫПОЛНЕННАЯ ЗАДАЧА" if task else "ОЧЕРЕДЬ ЗАВЕРШЕНА" if store else "ОЧЕРЕДЬ НЕДОСТУПНА", "eyebrow"))
+        heading.addWidget(label("СЕЙЧАС В РАБОТЕ" if task and not task.completed else "ВЫПОЛНЕННАЯ ЗАДАЧА" if task else "КОНЕЦ ОЧЕРЕДИ" if store and store.active else "ОЧЕРЕДЬ ЗАВЕРШЕНА" if store else "ОЧЕРЕДЬ НЕДОСТУПНА", "eyebrow"))
         heading.addStretch()
         index = store.tasks.index(task) if task else len(store.tasks) if store else 0
         self.back_button = IconButton("back", lambda: self.browse_task(-1), "Предыдущая задача")
@@ -1125,9 +1196,11 @@ class Window(QMainWindow):
                 card.addWidget(row)
                 self.work_checkboxes[child.id] = checkbox
         else:
-            self.task_title = label("Все задачи выполнены" if store else "Не удалось прочитать файл. Исправьте его и нажмите обновление.", "tasktitle", True)
+            self.task_title = label(("Дальше задач нет" if store.active else "Все задачи выполнены") if store else "Не удалось прочитать файл. Исправьте его и нажмите обновление.", "tasktitle", True)
             self.task_title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
             card.addWidget(self.task_title)
+            if store and store.active:
+                card.addWidget(label("Пропущенные задачи остались выше. К ним можно вернуться стрелкой назад.", "muted", True))
         if store:
             additions = QHBoxLayout()
             self.add_work_button = button("+ Задача", lambda: self.show_work_draft(), "ghost")
@@ -1259,17 +1332,22 @@ class Window(QMainWindow):
         dest = index + direction
         if 0 <= dest < len(store.tasks):
             previous = self.session.view_task_id
+            was_end = self.session.at_queue_end
             self.session.view_task_id = store.tasks[dest].id
+            self.session.at_queue_end = False
             if not self.safe(self.checkpoint):
                 self.session.view_task_id = previous
+                self.session.at_queue_end = was_end
                 return
             self.render_work()
 
-    def advance_after_completion(self, ident):
-        store = self.stores[self.session.queue]
+    def advance_after_completion(self, ident, *, session=None, store=None):
+        session = session or self.session
+        store = store or self.stores[session.queue]
         index = next((i for i, t in enumerate(store.tasks) if t.id == ident), -1)
-        following = store.tasks[index + 1:] + store.tasks[:index + 1]
-        self.session.view_task_id = next((t.id for t in following if not t.completed), None)
+        following = store.tasks[index + 1:] if index >= 0 else []
+        session.view_task_id = next((t.id for t in following if not t.completed), None)
+        session.at_queue_end = session.view_task_id is None
 
     def set_task_checked(self, key, ident, checked):
         if not self.flush_work_edits() or not self.flush_overview_edits():
@@ -1415,6 +1493,7 @@ class Window(QMainWindow):
             self.session.undo_registered()
             root = next(c["id"] if c["parent_id"] is None else c["parent_id"] for c in completion.changes)
             self.session.view_task_id = root
+            self.session.at_queue_end = False
             self.session.pending = None
             self.checkpoint()
             self.render_work()

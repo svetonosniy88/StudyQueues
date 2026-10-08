@@ -1440,7 +1440,7 @@ def test_task_menus_are_explicit_and_dismiss_without_moving_text(desktop, app):
     window.add_task('university', 'Подпункт', root)
     app.processEvents()
     child = store.by_id[root].children[0].id
-    for ident, labels in ((root, ['Добавить подпункт', 'Удалить задачу и подпункты']), (child, ['Удалить подпункт'])):
+    for ident, labels in ((root, ['Выбрать для занятия', 'Добавить подпункт', 'Удалить задачу и подпункты']), (child, ['Удалить подпункт'])):
         row = window.task_rows[ident]
         before = row.editor.geometry()
         QTest.mouseClick(row.menu_button, Qt.LeftButton)
@@ -1459,7 +1459,7 @@ def test_overview_child_is_added_inline_and_draft_survives_refresh(desktop, app)
     QTest.mouseClick(window.task_rows[root].menu_button, Qt.LeftButton)
     app.processEvents()
     menu = window.active_task_menu
-    action = menu.actions()[0]
+    action = next(a for a in menu.actions() if a.text() == 'Добавить подпункт')
     QTest.mouseClick(menu, Qt.LeftButton, pos=menu.actionGeometry(action).center())
     app.processEvents()
     assert window.add_inputs['university'].hasFocus()
@@ -1486,3 +1486,293 @@ def test_overview_inline_child_cancel_does_not_write(desktop, app):
     assert paths['university'].read_bytes() == original
     assert not window.add_inputs['university'].text()
     assert window.add_cancels['university'].isHidden()
+
+
+def test_start_selection_from_menu_keeps_bounded_page_and_time_setup(desktop, app):
+    window, paths = desktop
+    key = 'self_development'
+    paths[key].write_text('# Очередь\n' + ''.join(
+        f'- [ ] Задача {i} <!-- task:q{i} -->\n' for i in range(45)), encoding='utf-8')
+    window.reload()
+    window.move_queue_window(key, 1)
+    window.duration.setValue(0)
+    original = paths[key].read_bytes()
+    row = window.task_rows['q17']
+    QTest.mouseClick(row.menu_button, Qt.LeftButton)
+    app.processEvents()
+    menu = window.active_task_menu
+    action = next(a for a in menu.actions() if a.objectName() == 'startTaskAction')
+    assert action.text() == 'Выбрать для занятия' and action.isEnabled()
+    QTest.mouseClick(menu, Qt.LeftButton, pos=menu.actionGeometry(action).center())
+    app.processEvents()
+    assert window.selected == key and window.start_task['id'] == 'q17'
+    assert window.session is None and not window.start_button.isEnabled()
+    assert paths[key].read_bytes() == original
+    window.start_session()
+    assert window.session is None and window.start_task['id'] == 'q17'
+    group = window.task_lists[key].all_groups['q17']
+    assert group.property('startSelected') and group.start_hint.isVisible()
+    assert len(window.task_lists[key].groups) == 15
+    window.move_queue_window(key, 1)
+    assert 'q17' not in window.task_lists[key].all_groups
+    window.move_queue_window(key, -1)
+    window.refresh_overview()
+    assert window.task_lists[key].all_groups['q17'].property('startSelected')
+    assert len(window.task_lists[key].groups) == 15
+    window.duration.setValue(20)
+    window.start_session()
+    assert window.current_task.id == 'q17' and window.session.queue == key
+    assert window.start_task is None
+    snapshot = window.state.read('active_session.json', {})['session']
+    assert snapshot['view_task_id'] == 'q17' and not snapshot['at_queue_end']
+    assert paths[key].read_bytes() == original
+    window.complete(key, 'q17')
+    wait(window)
+    assert window.current_task.id == 'q18' and window.session.counts == (1, 0)
+    assert not window.stores[key].by_id['q0'].done
+
+
+def test_start_selection_clear_switch_and_completed_child_menu(desktop, app):
+    window, paths = desktop
+    key = 'university'
+    root = window.stores[key].tasks[1].id
+    window.choose_start_task(key, root)
+    row = window.task_rows[root]
+    window.task_menu(key, root, row)
+    menu = window.active_task_menu
+    action = next(a for a in menu.actions() if a.objectName() == 'startTaskAction')
+    assert action.text() == 'Сбросить выбор'
+    action.trigger()
+    menu.close()
+    app.processEvents()
+    assert window.start_task is None
+    assert not window.task_lists[key].all_groups[root].property('startSelected')
+    window.choose_start_task(key, root)
+    window.select_queue('self_development')
+    assert window.start_task is None
+    window.add_task(key, 'Подпункт', root)
+    child = window.stores[key].by_id[root].children[0].id
+    window.choose_start_task(key, child)
+    assert window.start_task is None
+    window.task_menu(key, child, window.task_rows[child])
+    assert not any(a.objectName() == 'startTaskAction' for a in window.active_task_menu.actions())
+    window.active_task_menu.close()
+    window.set_task_checked(key, root, True)
+    window.show_done.setChecked(True)
+    window.task_menu(key, root, window.task_rows[root])
+    action = next(a for a in window.active_task_menu.actions() if a.objectName() == 'startTaskAction')
+    assert not action.isEnabled()
+    window.active_task_menu.close()
+
+
+@pytest.mark.parametrize('change', ['completed', 'deleted', 'identity_changed'])
+def test_selected_start_invalidated_by_external_changes_stops_launch(desktop, change):
+    window, paths = desktop
+    key = 'university'
+    paths[key].write_text('- [ ] Первая <!-- task:first -->\n- [ ] Выбранная <!-- task:chosen -->\n', encoding='utf-8')
+    window.reload()
+    window.choose_start_task(key, 'chosen')
+    text = paths[key].read_text(encoding='utf-8')
+    if change == 'completed':
+        text = text.replace('- [ ] Выбранная', '- [x] Выбранная')
+    elif change == 'deleted':
+        text = text.splitlines(keepends=True)[0]
+    else:
+        text = text.replace('task:chosen', 'task:replacement')
+    paths[key].write_text(text, encoding='utf-8')
+    original = paths[key].read_bytes()
+    window.start_session()
+    assert window.session is None and window.start_task is None
+    assert window.pages.currentWidget() == window.overview
+    assert window.toast.property('error') and 'Выберите задачу' in window.toast.text()
+    assert paths[key].read_bytes() == original
+
+
+def test_selected_start_snapshot_failure_retains_choice_and_restore_position(desktop, monkeypatch):
+    window, paths = desktop
+    key = 'university'
+    root = window.stores[key].tasks[1].id
+    window.choose_start_task(key, root)
+    original = paths[key].read_bytes()
+    write = window.state.write
+    def fail(name, data):
+        if name == 'active_session.json':
+            raise StateError('Нет доступа к снимку')
+        write(name, data)
+    monkeypatch.setattr(window.state, 'write', fail)
+    window.start_session()
+    assert window.session is None and window.start_task['id'] == root
+    assert window.toast.property('error') and paths[key].read_bytes() == original
+    monkeypatch.setattr(window.state, 'write', write)
+    window.start_session()
+    window.close()
+    reopened = Window(window.state.directory, paths)
+    reopened.restore_session()
+    assert reopened.current_task.text == 'Вторая' and not reopened.session.running
+    assert reopened.start_task is None
+    reopened.close()
+
+
+@pytest.mark.parametrize('selected_start', [False, True])
+def test_completion_moves_only_forward_after_start_or_arrow_skip_and_restores_end(desktop, selected_start):
+    window, paths = desktop
+    key = 'university'
+    store = window.stores[key]
+    first, last = (task.id for task in store.tasks)
+    if selected_start:
+        window.choose_start_task(key, last)
+    window.start_session()
+    if not selected_start:
+        window.browse_task(1)
+    assert window.current_task.id == last
+    window.complete(key, last)
+    wait(window)
+    assert window.current_task is None and window.session.at_queue_end
+    assert not store.by_id[first].done and window.session.counts == (1, 0)
+    assert window.task_title.text() == 'Дальше задач нет'
+    assert window.session.running and not window.complete_button.isEnabled()
+    assert window.back_button.isEnabled() and not window.forward_button.isEnabled()
+    window.close()
+    reopened = Window(window.state.directory, paths)
+    reopened.restore_session()
+    assert reopened.current_task is None and reopened.session.at_queue_end
+    assert not reopened.session.running
+    reopened.browse_task(-1)
+    assert reopened.current_task.id == last and not reopened.session.at_queue_end
+    reopened.browse_task(-1)
+    assert reopened.current_task.id == first
+    reopened.close()
+
+
+def test_end_undo_and_new_task_do_not_return_to_skipped_root(desktop):
+    window, paths = desktop
+    key = 'university'
+    store = window.stores[key]
+    first, last = (task.id for task in store.tasks)
+    window.start_session()
+    window.browse_task(1)
+    window.complete(key, last)
+    wait(window)
+    window.undo()
+    assert window.current_task.id == last and not window.session.at_queue_end
+    assert window.session.counts == (0, 0)
+    window.complete(key, last)
+    wait(window)
+    window.add_task(key, 'Следующая после конца')
+    assert window.current_task.text == 'Следующая после конца'
+    assert not window.session.at_queue_end
+    assert store.tasks[-1].id == window.current_task.id and not store.by_id[first].done
+
+
+def test_forward_completion_skips_done_following_roots_without_wrapping(desktop):
+    window, paths = desktop
+    key = 'university'
+    paths[key].write_text('- [ ] Пропущенная <!-- task:skip -->\n'
+                          '- [ ] Текущая <!-- task:current -->\n'
+                          '- [x] Готовая <!-- task:done -->\n'
+                          '- [ ] Следующая <!-- task:next -->\n', encoding='utf-8')
+    window.reload()
+    window.start_session()
+    window.browse_task(1)
+    window.complete(key, 'current')
+    wait(window)
+    assert window.current_task.id == 'next'
+    window.complete(key, 'next')
+    wait(window)
+    assert window.current_task is None and window.session.at_queue_end
+    assert not window.stores[key].by_id['skip'].done
+
+
+def test_pending_completion_recovery_keeps_end_after_markdown_commit(desktop):
+    window, paths = desktop
+    key = 'university'
+    store = window.stores[key]
+    last = store.tasks[-1].id
+    session = Session(key, store.path, 25)
+    session.view_task_id = last
+    record = session.to_dict()
+    completion = store.completion_for(last)
+    record['pending'] = {'kind': 'complete', 'changes': completion.changes}
+    window.state.write('active_session.json', {'session': record})
+    store.restore(completion, forward=True)
+    reopened = Window(window.state.directory, paths)
+    reopened.restore_session()
+    assert reopened.current_task is None and reopened.session.at_queue_end
+    assert reopened.session.counts == (1, 0) and not reopened.session.running
+    reopened.close()
+
+
+def test_delete_last_work_root_keeps_end_and_browse_failure_keeps_cursor(desktop, monkeypatch):
+    window, paths = desktop
+    key = 'university'
+    window.start_session()
+    window.browse_task(1)
+    last = window.current_task.id
+    window.delete_task(key, last)
+    assert window.current_task is None and window.session.at_queue_end
+    def fail():
+        raise StateError('Сбой снимка')
+    monkeypatch.setattr(window, 'checkpoint', fail)
+    window.browse_task(-1)
+    assert window.current_task is None and window.session.at_queue_end
+    assert window.session.view_task_id is None
+    monkeypatch.undo()
+
+
+def test_start_selection_recovery_blocks_menu_and_file_replacement_clears_choice(desktop, app, monkeypatch):
+    window, paths = desktop
+    key = 'university'
+    root = window.stores[key].tasks[1].id
+    window.choose_start_task(key, root)
+    replacement = paths[key].parent / 'replacement.md'
+    replacement.write_text(f'- [ ] Другая задача <!-- task:{root} -->\n', encoding='utf-8')
+    from PySide6.QtWidgets import QFileDialog
+    monkeypatch.setattr(QFileDialog, 'getOpenFileName', lambda *args: (str(replacement), ''))
+    window.choose_path(key)
+    assert window.start_task is None and window.toast.property('error')
+    root = window.stores[key].tasks[0].id
+    window.recovery = Session(key, replacement, 10).to_dict()
+    window.task_menu(key, root, window.task_rows[root])
+    action = next(a for a in window.active_task_menu.actions() if a.objectName() == 'startTaskAction')
+    assert not action.isEnabled()
+    window.active_task_menu.close()
+    window.choose_start_task(key, root)
+    assert window.start_task is None
+
+
+def test_start_selected_stops_on_unsaved_editor_write_failure(desktop, monkeypatch):
+    window, paths = desktop
+    key = 'university'
+    root = window.stores[key].tasks[1].id
+    window.choose_start_task(key, root)
+    original = paths[key].read_bytes()
+    window.task_edits[root].setPlainText('Не потерять ввод')
+    def fail(lines):
+        raise QueueError('Нет доступа к Markdown')
+    monkeypatch.setattr(window.stores[key], '_commit', fail)
+    window.start_session()
+    assert window.session is None and window.start_task['id'] == root
+    assert window.task_edits[root].toPlainText() == 'Не потерять ввод'
+    assert paths[key].read_bytes() == original and window.toast.property('error')
+    monkeypatch.undo()
+
+
+def test_pending_undo_recovery_at_end_restores_last_root_without_wrapping(desktop):
+    window, paths = desktop
+    key = 'university'
+    store = window.stores[key]
+    last = store.tasks[-1].id
+    completion = store.completion_for(last)
+    store.restore(completion, forward=True)
+    session = Session(key, store.path, 25)
+    session.register(completion)
+    session.at_queue_end = True
+    record = session.to_dict()
+    record['pending'] = {'kind': 'undo', 'changes': completion.changes}
+    window.state.write('active_session.json', {'session': record})
+    store.restore(completion)
+    reopened = Window(window.state.directory, paths)
+    reopened.restore_session()
+    assert reopened.current_task.id == last and not reopened.session.at_queue_end
+    assert reopened.session.counts == (0, 0) and not reopened.session.running
+    reopened.close()

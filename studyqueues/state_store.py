@@ -97,6 +97,8 @@ class StateStore:
                 if not isinstance(ident, str) or not isinstance(value, dict) or not isinstance(value["text"], str) or (value["parent_id"] is not None and not isinstance(value["parent_id"], str)):
                     raise ValueError("некорректный результат задачи")
             pending = record.get("pending")
+            if type(record.get("at_queue_end", False)) is not bool:
+                raise ValueError("некорректный признак конца очереди")
             if record.get("view_task_id") is not None and not isinstance(record["view_task_id"], str):
                 raise ValueError("некорректная просматриваемая задача")
             position = record.get("view_task_position")

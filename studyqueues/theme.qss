@@ -24,6 +24,8 @@ QLabel#chip { background: #303744; color: #a5c7ff; border-radius: 5px; padding: 
 QFrame#queueCard { background: #26282b; border: 1px solid #43454a; border-radius: 10px; }
 QFrame#queueCard[selected="true"] { border: 1px solid #6b9bfa; background: #282b31; }
 QFrame#taskGroup { background: #2b2d30; border: 1px solid #393c43; border-radius: 8px; }
+QFrame#taskGroup[startSelected="true"] { background: #293343; border-color: #6b9bfa; }
+QLabel#startTaskHint { color: #a5c7ff; font-size: 13px; margin: 4px 10px 2px 10px; }
 QFrame#taskRow { background: transparent; border: none; }
 QFrame#workTask { background: #26282b; border: 1px solid #43474f; border-radius: 14px; }
 QFrame#launchBar { background: #26282b; border: 1px solid #393b40; border-radius: 8px; }

@@ -22,6 +22,7 @@ class Session:
         self.pending = None
         self.view_task_id = None
         self.view_task_position = None
+        self.at_queue_end = False
         self.running = True
         self.clock, self.now = clock, now
         self.last_tick = clock()
@@ -100,7 +101,7 @@ class Session:
 
     def to_dict(self):
         return {k: getattr(self, k) for k in ("id", "queue", "path", "planned_seconds", "active_seconds",
-                "started_at", "ended_at", "intervals", "completed", "pending", "view_task_id", "view_task_position")}
+                "started_at", "ended_at", "intervals", "completed", "pending", "view_task_id", "view_task_position", "at_queue_end")}
 
     @classmethod
     def restore(cls, record, clock=clock_module.monotonic, now=local_now):

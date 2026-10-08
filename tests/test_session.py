@@ -129,6 +129,17 @@ def test_invalid_snapshot_rejected():
         Session.restore(record)
 
 
+def test_queue_end_snapshot_is_optional_for_legacy_sessions_and_validated():
+    record = Clock().session().to_dict()
+    record.pop('at_queue_end')
+    assert not Session.restore(record).at_queue_end
+    record['at_queue_end'] = True
+    assert Session.restore(record).at_queue_end
+    record['at_queue_end'] = 'true'
+    with pytest.raises(StateError):
+        Session.restore(record)
+
+
 def test_favorite_legacy_history_upsert_delete_and_totals(tmp_path):
     clock = Clock()
     session = clock.session()
