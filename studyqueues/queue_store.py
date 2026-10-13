@@ -162,14 +162,19 @@ class QueueStore:
         removed = {t.line for t in [item, *item.children]}
         self._commit([line for i, line in enumerate(self._prepared()) if i not in removed])
 
-    def add(self, text, parent_id=None, *, after_id=None, at_start=False):
+    def add(self, text, parent_id=None, *, after_id=None, at_start=False, completed=False, task_id=None):
         text = self._valid_text(text)
+        if type(completed) is not bool:
+            raise QueueError("Некорректная отметка новой задачи.")
+        mark = "x" if completed else " "
         if at_start and (parent_id is not None or after_id is not None):
             raise QueueError("Вставка в начало доступна только для новой корневой задачи.")
         if after_id is not None and (parent_id is not None or after_id not in self.by_id or self.by_id[after_id].parent_id):
             raise QueueError("Позиция добавления должна быть корневой задачей.")
         lines = self._prepared()
-        ident = uuid4().hex
+        if task_id is not None and (not isinstance(task_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', task_id) or task_id in self.by_id):
+            raise QueueError("Некорректный или уже существующий ID новой записи.")
+        ident = task_id if task_id is not None else uuid4().hex
         if parent_id:
             parent = self.by_id[parent_id]
             if parent.parent_id:
@@ -177,9 +182,9 @@ class QueueStore:
             pos = parent.children[-1].line + 1 if parent.children else parent.line + 1
             if pos and not lines[pos - 1].endswith("\n"):
                 lines[pos - 1] += self.newline
-            lines.insert(pos, f"    - [ ] {text} <!-- task:{ident} -->{self.newline}")
-            if parent.done:
-                lines[parent.line] = self._line(parent, done=False)
+            lines.insert(pos, f"    - [{mark}] {text} <!-- task:{ident} -->{self.newline}")
+            if (parent.done and not completed) or (completed and all(child.done for child in parent.children)):
+                lines[parent.line] = self._line(parent, done=completed)
                 if not lines[parent.line].endswith("\n"):
                     lines[parent.line] += self.newline
         else:
@@ -189,7 +194,7 @@ class QueueStore:
                 pos = self.tasks[0].line
             if pos and not lines[pos - 1].endswith("\n"):
                 lines[pos - 1] += self.newline
-            lines.insert(pos, f"- [ ] {text} <!-- task:{ident} -->{self.newline}")
+            lines.insert(pos, f"- [{mark}] {text} <!-- task:{ident} -->{self.newline}")
         self._commit(lines)
         return ident
 

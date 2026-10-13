@@ -64,7 +64,7 @@ class StateStore:
     @staticmethod
     def validate_session(record):
         try:
-            if not isinstance(record, dict) or record["queue"] not in ("university", "self_development"):
+            if not isinstance(record, dict) or record["queue"] not in ("university", "self_development", "creative"):
                 raise ValueError("неизвестная очередь")
             if type(record.get("favorite", False)) is not bool:
                 raise ValueError("некорректная отметка избранного")
@@ -99,6 +99,11 @@ class StateStore:
             pending = record.get("pending")
             if type(record.get("at_queue_end", False)) is not bool:
                 raise ValueError("некорректный признак конца очереди")
+            draft = record.get("creative_draft", {"text": "", "parent_id": None})
+            if not isinstance(draft, dict) or not isinstance(draft.get("text"), str) or 'parent_id' not in draft or (draft['parent_id'] is not None and not isinstance(draft['parent_id'], str)):
+                raise ValueError("некорректный черновик творческого занятия")
+            if 'task_id' in draft and (not isinstance(draft['task_id'], str) or not draft['task_id']):
+                raise ValueError("некорректный ID черновика")
             if record.get("view_task_id") is not None and not isinstance(record["view_task_id"], str):
                 raise ValueError("некорректная просматриваемая задача")
             position = record.get("view_task_position")

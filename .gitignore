@@ -32,3 +32,4 @@ local_data/
 /application.lock
 /backups/
 /queues/
+/creative/

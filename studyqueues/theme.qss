@@ -28,6 +28,7 @@ QFrame#taskGroup[startSelected="true"] { background: #293343; border-color: #6b9
 QLabel#startTaskHint { color: #a5c7ff; font-size: 13px; margin: 4px 10px 2px 10px; }
 QFrame#taskRow { background: transparent; border: none; }
 QFrame#workTask { background: #26282b; border: 1px solid #43474f; border-radius: 14px; }
+QFrame#creativeTasks { background: #26282b; border: 1px solid #43474f; border-radius: 10px; }
 QFrame#launchBar { background: #26282b; border: 1px solid #393b40; border-radius: 8px; }
 QFrame#statCard { background: #26282b; border: 1px solid #393b40; border-radius: 8px; }
 QFrame#historyRow { background: #26282b; border: 1px solid #393b40; border-radius: 7px; }

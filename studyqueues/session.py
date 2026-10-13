@@ -23,6 +23,7 @@ class Session:
         self.view_task_id = None
         self.view_task_position = None
         self.at_queue_end = False
+        self.creative_draft = {"text": "", "parent_id": None}
         self.running = True
         self.clock, self.now = clock, now
         self.last_tick = clock()
@@ -68,6 +69,8 @@ class Session:
         self._merge = False
 
     def extend(self, minutes):
+        if self.creative:
+            raise ValueError("Творческое занятие использует секундомер без плана времени")
         if minutes <= 0:
             raise ValueError("Время должно быть положительным")
         self.tick()
@@ -76,6 +79,10 @@ class Session:
     @property
     def remaining(self):
         return self.planned_seconds - self.active_seconds
+
+    @property
+    def creative(self):
+        return self.queue == "creative"
 
     def register(self, completion):
         self.last_completion = completion
@@ -101,7 +108,7 @@ class Session:
 
     def to_dict(self):
         return {k: getattr(self, k) for k in ("id", "queue", "path", "planned_seconds", "active_seconds",
-                "started_at", "ended_at", "intervals", "completed", "pending", "view_task_id", "view_task_position", "at_queue_end")}
+                "started_at", "ended_at", "intervals", "completed", "pending", "view_task_id", "view_task_position", "at_queue_end", "creative_draft")}
 
     @classmethod
     def restore(cls, record, clock=clock_module.monotonic, now=local_now):

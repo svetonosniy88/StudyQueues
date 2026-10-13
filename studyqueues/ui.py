@@ -1,9 +1,10 @@
 from pathlib import Path
 from datetime import date, datetime
 from math import ceil
+from uuid import uuid4
 
-from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QPoint
-from PySide6.QtGui import QFont, QShortcut, QKeySequence, QPalette, QColor, QFontDatabase, QIcon
+from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QPoint, QUrl
+from PySide6.QtGui import QFont, QShortcut, QKeySequence, QPalette, QColor, QFontDatabase, QIcon, QDesktopServices
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabel, QPushButton,
     QCheckBox, QLineEdit, QSpinBox, QVBoxLayout, QHBoxLayout, QScrollArea, QStackedWidget,
     QFileDialog, QMenu, QGraphicsOpacityEffect, QSizeGrip, QSizePolicy, QLayout)
@@ -12,12 +13,14 @@ from .queue_store import QueueStore, QueueError
 from . import __version__
 from .state_store import StateStore, StateError
 from .session import Session, daily_seconds
+from .creative import CreativePanel, create_creative_session
 from .models import Completion
 from .queue_window import QueueWindow, PAGE_SIZE
 from .native_window import NativeFrame
 from .widgets import TaskArea, TaskList, DragHandle, QueueCard, LaunchBar, CapsuleScrollBar, WorkContent, IconButton, InlineTaskEdit, TaskCheckBox, TaskRow
 
 NAMES = {"university": "Университет", "self_development": "Саморазвитие"}
+SESSION_NAMES = {**NAMES, "creative": "Творческий режим"}
 
 
 def label(text, name=None, wrap=False):
@@ -107,6 +110,7 @@ class Window(QMainWindow):
         self.selected = "university"
         self.start_task = None
         self.session = None
+        self.creative_panel = None
         self.busy = False
         self.animations = []
         self.checkpoint_ticks = 0
@@ -156,6 +160,16 @@ class Window(QMainWindow):
                         self.stores[key] = QueueStore(path, self.state.backups)
                 except QueueError as e:
                     self.load_errors[key] = str(e)
+        if self.session and self.session.creative:
+            try:
+                store = previous.get('creative')
+                if store and store.path == Path(self.session.path):
+                    store.load()
+                else:
+                    store = QueueStore(self.session.path, self.state.backups)
+                self.stores['creative'] = store
+            except QueueError as error:
+                self.load_errors['creative'] = str(error)
 
     def _build(self):
         shell = QWidget()
@@ -300,6 +314,9 @@ class Window(QMainWindow):
         self.show_done.toggled.connect(self.apply_overview_filter)
         controls.addWidget(self.show_done)
         controls.addStretch()
+        self.creative_button = button("Творческий режим", self.start_creative_session, "ghost", "Начать без очереди и плана времени")
+        self.creative_button.setEnabled(not self.recovery)
+        controls.addWidget(self.creative_button)
         if self.recovery:
             controls.addWidget(button("Восстановить занятие", self.restore_session))
         self.overview_layout.addLayout(controls)
@@ -451,11 +468,13 @@ class Window(QMainWindow):
     def sync_overview(self):
         """Keep existing rows and controls; change only the bounded root window."""
         checked = self.show_done.isChecked()
-        if set(self.queue_pagers) != set(self.stores):
+        self.creative_button.setEnabled(not self.recovery and not self.session)
+        queue_stores = {key: store for key, store in self.stores.items() if key in NAMES}
+        if set(self.queue_pagers) != set(queue_stores):
             del self.queue_counts
             self.refresh_overview()
             return
-        for key, store in self.stores.items():
+        for key, store in queue_stores.items():
             body = self.task_lists[key]
             if not hasattr(body, "all_groups") or key not in self.queue_pagers:
                 # A previously disconnected queue needs its file controls rebuilt.
@@ -793,8 +812,18 @@ class Window(QMainWindow):
                 raise QueueError("Сначала подключите файл очереди.")
             current = getattr(self, "current_task", None)
             after = current.id if parent is None and self.session and self.session.queue == key and self.pages.currentWidget() == self.work and current else None
-            added_id = store.add(text, parent, after_id=after, at_start=parent is None and not in_work)
+            creative = bool(self.session and self.session.creative and key == 'creative')
+            task_id = None
+            if creative:
+                # Persist the draft identity before Markdown: recovery can tell a
+                # committed entry from an unsaved draft without comparing text.
+                task_id = self.session.creative_draft.setdefault('task_id', uuid4().hex)
+                self.checkpoint()
+            added_id = store.add(text, parent, after_id=after, at_start=parent is None and not in_work, completed=creative, task_id=task_id)
             committed = True
+            if creative:
+                self.session.creative_draft['text'] = ''
+                self.session.creative_draft.pop('task_id', None)
             if in_work and parent is None and self.session.queue == key and self.session.at_queue_end:
                 self.session.view_task_id = added_id
                 self.session.at_queue_end = False
@@ -873,13 +902,16 @@ class Window(QMainWindow):
         def action():
             store.edit(ident, text)
             editor.mark_saved(store.by_id[ident].text)
-            self.current_task = store.by_id.get(self.session.view_task_id)
+            self.current_task = None if self.session.creative else store.by_id.get(self.session.view_task_id)
             self.session.last_completion = None
             self.reconcile_results()
             self.checkpoint()
             self.refresh_overview()
         saved = self.safe(action)
         self.mark_editor_error(editor, not saved)
+        if saved and self.session.creative:
+            self.creative_panel.checkboxes[ident].setAccessibleName(store.by_id[ident].text)
+            self.creative_panel.update_parent()
         return saved
 
     def flush_work_edits(self, excluding=None):
@@ -894,6 +926,12 @@ class Window(QMainWindow):
 
     def show_work_draft(self, parent=None):
         if self.busy or not self.session or self.session.ended_at or not self.flush_work_edits():
+            return
+        if self.session.creative:
+            if parent:
+                self.creative_panel.add_child(parent)
+            else:
+                self.creative_panel.reset_parent()
             return
         if self.work_draft is None:
             self.work_draft = {"parent_id": parent, "text": ""}
@@ -966,6 +1004,10 @@ class Window(QMainWindow):
         """Keep this session's credit consistent with the current Markdown marks."""
         store = self.stores.get(self.session.queue)
         if not store:
+            return
+        if self.session.creative:
+            self.session.completed = {task.id: {"text": task.text, "parent_id": task.parent_id}
+                                      for task in store.by_id.values() if task.completed}
             return
         for ident in list(self.session.completed):
             task = store.by_id.get(ident)
@@ -1091,6 +1133,40 @@ class Window(QMainWindow):
             self.render_work()
         self.safe(action)
 
+    def start_creative_session(self):
+        if not self.flush_overview_edits():
+            return
+        def action():
+            if self.session or self.recovery:
+                raise StateError("Сначала завершите или восстановите текущее занятие.")
+            session = create_creative_session(self.state.directory)
+            try:
+                store = QueueStore(session.path, self.state.backups)
+                self.session = session
+                self.stores['creative'] = store
+                self.checkpoint()
+            except (StateError, QueueError, OSError):
+                self.session = None
+                self.stores.pop('creative', None)
+                Path(session.path).unlink(missing_ok=True)
+                raise
+            self.clear_start_task()
+            self.pages.setCurrentWidget(self.work)
+            self.sidebar.hide()
+            self.render_work()
+        self.safe(action)
+
+    def open_notes(self, path):
+        file = Path(path)
+        if file.suffix.lower() != '.md':
+            self.notify("Для записей нужен Markdown-файл .md.", True)
+            return
+        if not file.is_file():
+            self.notify("Файл записей не найден. Возможно, он был перемещён.", True)
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(file.resolve()))):
+            self.notify("Не удалось открыть Markdown. Выберите приложение для файлов .md в Windows.", True)
+
     def restore_session(self):
         def action():
             session = Session.restore(self.recovery)
@@ -1102,6 +1178,9 @@ class Window(QMainWindow):
                 self.show_stats()
                 return
             store = QueueStore(session.path, self.state.backups)
+            if session.creative and session.creative_draft.get('task_id') in store.by_id:
+                session.creative_draft['text'] = ''
+                session.creative_draft.pop('task_id', None)
             if session.pending:
                 pending = session.pending
                 changes = pending["changes"]
@@ -1110,7 +1189,7 @@ class Window(QMainWindow):
                     if pending["kind"] == "complete":
                         session.register(Completion(changes))
                         root = next((c["id"] for c in changes if c["parent_id"] is None), None)
-                        if root:
+                        if root and not session.creative:
                             self.advance_after_completion(root, session=session, store=store)
                     else:
                         for c in changes:
@@ -1120,12 +1199,15 @@ class Window(QMainWindow):
                             session.at_queue_end = False
                 session.pending = None
             session.last_completion = None
-            settings = {**self.settings, "paths": {**self.settings["paths"], session.queue: session.path}}
+            settings = {**self.settings, "paths": dict(self.settings["paths"])}
+            if not session.creative:
+                settings['paths'][session.queue] = session.path
             self.state.write("settings.json", settings)
             self.state.write("active_session.json", {"session": session.to_dict()})
             self.settings = settings
             self.session = session
-            self.selected = session.queue
+            if not session.creative:
+                self.selected = session.queue
             self.stores[session.queue] = store
             self.reconcile_results()
             self.recovery = None
@@ -1135,6 +1217,10 @@ class Window(QMainWindow):
         self.safe(action)
 
     def render_work(self):
+        if self.session.creative:
+            self.render_creative()
+            return
+        self.creative_panel = None
         previous_id = getattr(getattr(self, "current_task", None), "id", None)
         scroll_value = self.task_scroll.verticalScrollBar().value() if hasattr(self, "task_scroll") else 0
         for editor in self.work.findChildren(InlineTaskEdit):
@@ -1264,7 +1350,22 @@ class Window(QMainWindow):
                 scroll.verticalScrollBar().setValue(scroll_value if task and task.id == previous_id else 0)
         QTimer.singleShot(0, fit_and_restore)
 
+    def render_creative(self):
+        if self.creative_panel is None or self.creative_panel.session_id != self.session.id:
+            for editor in getattr(self, 'work_editors', {}).values():
+                editor.suspended = True
+            clear(self.work_layout)
+            self.creative_panel = CreativePanel(self, label, button, scroll_area)
+            self.work_layout.addWidget(self.creative_panel)
+        else:
+            self.creative_panel.sync()
+        self.update_clock()
+
     def fit_task_title(self):
+        if self.session and self.session.creative:
+            if self.creative_panel:
+                self.creative_panel.fit()
+            return
         if self.session and hasattr(self, "task_title"):
             margins = self.work_card.layout().contentsMargins()
             width = max(1, self.work_card.width() - margins.left() - margins.right())
@@ -1421,10 +1522,13 @@ class Window(QMainWindow):
             committed = True
             if active_session:
                 self.session.register(completion)
-                if self.current_task and self.current_task.id in completion.ids:
+                if not self.session.creative and self.current_task and self.current_task.id in completion.ids:
                     self.advance_after_completion(self.current_task.id)
                 self.checkpoint()
-            if self.pages.currentWidget() == self.work:
+            if active_session and self.session.creative:
+                self.busy = False
+                self.render_work()
+            elif self.pages.currentWidget() == self.work:
                 font = self.task_title.font()
                 if self.current_task.id in completion.ids:
                     font.setStrikeOut(True)
@@ -1513,6 +1617,11 @@ class Window(QMainWindow):
     def update_clock(self):
         if not self.session or not hasattr(self, "timer_label"):
             return
+        if self.session.creative:
+            self.timer_caption.setText("ВРЕМЯ ЗАНЯТИЯ")
+            self.timer_label.setText(clock_text(self.session.active_seconds))
+            self.pause_button.setText("Пауза" if self.session.running else "Продолжить")
+            return
         remaining = self.session.remaining
         self.timer_caption.setText("ОСТАЛОСЬ" if remaining >= 0 else "СВЕРХ ПЛАНА")
         self.timer_label.setText(("+" if remaining < 0 else "") + clock_text(abs(remaining) if remaining < 0 else ceil(remaining)))
@@ -1547,7 +1656,7 @@ class Window(QMainWindow):
             self.update_clock()
 
     def extend(self, minutes):
-        if self.busy or not self.session or self.session.ended_at:
+        if self.busy or not self.session or self.session.ended_at or self.session.creative:
             return
         self.session.extend(minutes)
         self.update_clock()
@@ -1556,6 +1665,9 @@ class Window(QMainWindow):
     def finish_session(self):
         if self.busy or not self.session or not self.flush_work_edits():
             return
+        if self.session.creative and not self.session.ended_at and self.creative_panel.entry.text().strip():
+            if not self.creative_panel.submit():
+                return
         def action():
             self.session.finish()
             self.checkpoint()
@@ -1563,12 +1675,17 @@ class Window(QMainWindow):
             self.state.write("active_session.json", {"session": None})
             roots, children = self.session.counts
             self.notify(f"Занятие сохранено: {minutes_text(self.session.active_seconds)} · задач {roots} · подпунктов {children}.")
+            if self.session.creative:
+                self.stores.pop('creative', None)
             self.session = None
             self.recovery = None
             self.overview_dirty = True
             self.stats_dirty = True
             self.show_stats()
         if not self.safe(action) and self.session and self.session.ended_at:
+            if self.session.creative:
+                self.creative_panel.stop_editing()
+                return
             for control in (self.complete_button, self.pause_button, self.back_button, self.forward_button,
                             self.work_root_checkbox, *self.work_checkboxes.values(), *self.work_editors.values(), *self.work_menu_buttons.values(),
                             getattr(self, "add_work_button", None), getattr(self, "add_child_button", None)):
@@ -1595,14 +1712,15 @@ class Window(QMainWindow):
             self.stats_layout.addWidget(label("Время, которое вы вложили", "heading"))
             self.stats_layout.addWidget(label("Занятия и выполненные задачи — без пауз и двойного учёта.", "subtitle"))
             totals = daily_seconds(history)
+            result_names = SESSION_NAMES if any(record['queue'] == 'creative' for record in history) else NAMES
             today = date.today().isoformat()
             cards = QHBoxLayout()
-            for key, name in NAMES.items():
+            for key, name in result_names.items():
                 card = QFrame()
                 card.setObjectName("statCard")
                 box = QVBoxLayout(card)
                 box.setContentsMargins(20, 18, 20, 18)
-                box.addWidget(label(name, "muted"))
+                box.addWidget(label(name, "muted", True))
                 box.addWidget(label(minutes_text(totals.get((today, key), 0)), "heading"))
                 box.addWidget(label("сегодня", "muted"))
                 cards.addWidget(card)
@@ -1617,7 +1735,7 @@ class Window(QMainWindow):
             box.setSpacing(10)
             for day in sorted({d for d, _ in totals}, reverse=True)[:60]:
                 box.addWidget(label(datetime.fromisoformat(day).strftime("%d.%m.%Y"), "brand"))
-                for key, name in NAMES.items():
+                for key, name in result_names.items():
                     if totals.get((day, key), 0):
                         box.addWidget(label(f"{name}   ·   {minutes_text(totals[day, key])}", "muted"))
             box.addSpacing(18)
@@ -1634,6 +1752,7 @@ class Window(QMainWindow):
             self.history_rows = {}
             self.favorite_buttons = {}
             self.delete_buttons = {}
+            self.open_notes_buttons = {}
             for record in reversed(visible):
                 completed = record.get("completed", {})
                 roots = sum(c["parent_id"] is None for c in completed.values())
@@ -1644,9 +1763,13 @@ class Window(QMainWindow):
                 line = QHBoxLayout(row)
                 line.setContentsMargins(14, 12, 12, 12)
                 line.setSpacing(12)
-                info = label(f"{started}   {NAMES[record['queue']]}   ·   {minutes_text(record['active_seconds'])}\nЗадач: {roots}   Подпунктов: {children}", wrap=True)
+                info = label(f"{started}   {SESSION_NAMES[record['queue']]}   ·   {minutes_text(record['active_seconds'])}\nЗадач: {roots}   Подпунктов: {children}", wrap=True)
                 info.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
                 line.addWidget(info, 1)
+                if record['queue'] == 'creative':
+                    open_file = button('Открыть записи', lambda _, path=record['path']: self.open_notes(path), 'ghost')
+                    line.addWidget(open_file)
+                    self.open_notes_buttons[record['id']] = open_file
                 favorite = record.get("favorite", False)
                 star = button("★" if favorite else "☆", lambda _, i=record["id"], v=not favorite: self.favorite_session(i, v), "favorite", "Убрать из избранного" if favorite else "Добавить в избранное")
                 star.setProperty("selected", favorite)

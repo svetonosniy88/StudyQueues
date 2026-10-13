@@ -18,6 +18,34 @@ class Clock:
         return Session(queue, "queue.md", 1, lambda: self.value, lambda: self.wall)
 
 
+def test_creative_stopwatch_excludes_pause_and_restores_without_plan():
+    clock = Clock()
+    session = Session('creative', 'journal.md', 0, lambda: clock.value, lambda: clock.wall)
+    clock.step(5)
+    session.tick()
+    session.pause()
+    clock.step(60)
+    session.tick()
+    assert session.creative and session.active_seconds == 5 and session.planned_seconds == 0
+    with pytest.raises(ValueError):
+        session.extend(5)
+    session.resume()
+    clock.step(3)
+    session.finish()
+    restored = Session.restore(session.to_dict())
+    assert restored.creative and not restored.running and restored.active_seconds == 8
+    assert sum(daily_seconds([session.to_dict()]).values()) == 8
+
+
+def test_legacy_snapshot_without_creative_draft_and_invalid_draft():
+    record = Clock().session().to_dict()
+    record.pop('creative_draft')
+    assert Session.restore(record).creative_draft == {'text': '', 'parent_id': None}
+    record['creative_draft'] = None
+    with pytest.raises(StateError):
+        Session.restore(record)
+
+
 def test_pause_resume_overtime_extend_and_finish():
     clock = Clock()
     session = clock.session()

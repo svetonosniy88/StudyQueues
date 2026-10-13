@@ -9,6 +9,19 @@ def queue(tmp_path, text):
     return QueueStore(path, tmp_path / "backups")
 
 
+def test_append_completed_entries_and_children_atomically_preserves_format(tmp_path):
+    store = queue(tmp_path, '\ufeff# Журнал\r\n- [x] Родитель <!-- task:root -->\r\n')
+    child = store.add('Сделанный подпункт', 'root', completed=True)
+    assert store.by_id['root'].done and store.by_id[child].done
+    unfinished = store.add('Ещё в работе', 'root')
+    assert not store.by_id['root'].done and not store.by_id[unfinished].done
+    added = store.add('Сделанная задача', completed=True)
+    assert store.by_id[added].done
+    raw = store.path.read_bytes()
+    assert raw.startswith(codecs.BOM_UTF8) and raw.count(b'\r\n') == 5
+    assert len(list(store.backup_dir.glob('*.md'))) == 3
+
+
 def test_insert_after_root_subtree_preserves_surrounding_markdown_and_conflict(tmp_path):
     text = ('\ufeff# Очередь\r\n- [ ] Первый <!-- task:a -->\r\n'
             '    - [x] Подпункт <!-- task:a1 -->\r\n'
