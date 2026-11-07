@@ -895,8 +895,13 @@ def test_demo_with_real_data_dir_cannot_change_personal_queue(tmp_path):
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     assert personal.read_text(encoding="utf-8") == source
     assert (profile / "settings.json").read_bytes() == settings
-    snapshot = StateStore(profile / "demo").read("active_session.json", {})
-    assert Path(snapshot["session"]["path"]).parent == profile / "demo"
+    from studyqueues.workspace_store import WorkspaceStore
+    demo_store = WorkspaceStore(profile / "demo")
+    snapshot = demo_store.active_session()
+    assert snapshot["path"] == "sqlite:workspace"
+    assert all(task['origin_key'].startswith(str((profile / 'demo').resolve()))
+               for task in demo_store.tasks(show_done=True))
+    demo_store.close()
 
 
 def test_overview_completed_checkbox_reopens_without_rewriting_history(desktop, app):
@@ -1188,6 +1193,12 @@ def test_adding_child_to_completed_task_opens_parent_and_removes_its_credit(desk
 
 def test_work_checkbox_padding_and_footer_alignment(desktop, app):
     window, paths = desktop
+    # Compact font metrics must not clip either end of an overview indicator.
+    for checkbox in window.findChildren(QCheckBox, 'taskCheck'):
+        option = QStyleOptionButton()
+        checkbox.initStyleOption(option)
+        indicator = checkbox.style().subElementRect(QStyle.SE_CheckBoxIndicator, option, checkbox)
+        assert checkbox.rect().contains(indicator)
     window.add_task('university', 'Подпункт', window.stores['university'].tasks[0].id)
     window.start_session()
     QTest.qWait(40)
@@ -1195,6 +1206,7 @@ def test_work_checkbox_padding_and_footer_alignment(desktop, app):
     option = QStyleOptionButton()
     checkbox.initStyleOption(option)
     indicator = checkbox.style().subElementRect(QStyle.SE_CheckBoxIndicator, option, checkbox)
+    assert checkbox.rect().contains(indicator)
     frame = checkbox.parentWidget()
     point = checkbox.mapTo(frame, indicator.topLeft())
     assert point.x() >= 8 and point.y() >= 8

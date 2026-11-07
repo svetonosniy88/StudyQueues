@@ -25,7 +25,8 @@ class IconButton(QPushButton):
         super().paintEvent(event)
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(QPen(QColor("#dfe1e5" if self.isEnabled() else "#676b73"), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        color=self.palette().windowText().color() if self.window().objectName()=='StudyQueuesWorkspace' else QColor("#604c6b" if self.isEnabled() else "#a092a8")
+        p.setPen(QPen(color, 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         p.translate(self.width() / 2, self.height() / 2)
         if self.kind == "close":
             p.drawLine(-5, -5, 5, 5)
@@ -34,8 +35,10 @@ class IconButton(QPushButton):
             p.drawLine(-6, 3, 6, 3)
         elif self.kind == "maximize":
             if self.window().isMaximized():
-                p.drawRect(QRectF(-3, -6, 9, 9))
-                p.fillRect(QRectF(-6, -3, 9, 9), QColor("#2b2d30"))
+                p.drawLine(-3, -6, 6, -6)
+                p.drawLine(6, -6, 6, 3)
+                p.drawLine(-3, -6, -3, -4)
+                p.drawLine(4, 3, 6, 3)
                 p.drawRect(QRectF(-6, -3, 9, 9))
             else:
                 p.drawRect(QRectF(-5, -5, 10, 10))
@@ -60,7 +63,7 @@ class IconButton(QPushButton):
             p.drawLine(1, -1, 1, 3)
         elif self.kind == "menu":
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor("#9da0a8" if self.isEnabled() else "#676b73"))
+            p.setBrush(QColor("#80608e" if self.isEnabled() else "#a092a8"))
             for x in (-5, 0, 5):
                 p.drawEllipse(QRectF(x - 1, -1, 2, 2))
         elif self.kind == "refresh":
@@ -204,7 +207,7 @@ class BranchMark(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#858993"), 1.5, Qt.SolidLine, Qt.RoundCap))
+        painter.setPen(QPen(QColor("#9c88a8"), 1.5, Qt.SolidLine, Qt.RoundCap))
         # Fixed gap from the end of the dash to the indicator in the adjacent line.
         y = self.height() / 2
         painter.drawLine(QPoint(self.width() - 18, round(y)), QPoint(self.width() - 8, round(y)))
@@ -225,7 +228,8 @@ class TaskRow(QFrame):
         font.setPixelSize(21 if work else 16)
         font.setStrikeOut(completed)
         self.editor.setFont(font)
-        anchor = self.editor.fontMetrics().height() + 4
+        # Some interface fonts have shorter metrics than the checkbox indicator.
+        anchor = max(self.editor.fontMetrics().height() + 4, ROW.indicator)
         padding = max(ROW.padding, ceil((ROW.minimum_height - anchor) / 2))
         indicator_inset = padding + (anchor - ROW.indicator) // 2
         outer = QHBoxLayout(self)
@@ -330,7 +334,8 @@ class CapsuleScrollBar(QScrollBar):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#a2b9de" if self.isSliderDown() else "#8190a6" if self.underMouse() else "#59616d"))
+        dark=self.window().objectName()=='StudyQueuesWorkspace'
+        painter.setBrush(QColor(("#b78be8" if self.isSliderDown() else "#776086" if self.underMouse() else "#514657") if dark else ("#8a3fd1" if self.isSliderDown() else "#b79dca" if self.underMouse() else "#d5c5e1")))
         painter.drawRoundedRect(self.thumb_rect(), 4, 4)
 
     def enterEvent(self, event):
@@ -398,7 +403,7 @@ class DragHandle(QToolButton):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#a5c7ff" if self.underMouse() else "#858993"), 1.5, Qt.SolidLine, Qt.RoundCap))
+        painter.setPen(QPen(QColor("#8a3fd1" if self.underMouse() else "#9c88a8"), 1.5, Qt.SolidLine, Qt.RoundCap))
         x, y = self.width() / 2, self.height() / 2
         for offset in (-4, 0, 4):
             painter.drawLine(QPoint(round(x - 6), round(y + offset)), QPoint(round(x + 6), round(y + offset)))
@@ -471,8 +476,8 @@ class DropSlot(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor(121, 168, 255, 150), 1.5, Qt.DashLine))
-        painter.setBrush(QColor(121, 168, 255, 32))
+        painter.setPen(QPen(QColor(138, 63, 209, 150), 1.5, Qt.DashLine))
+        painter.setBrush(QColor(138, 63, 209, 24))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 8, 8)
 
 

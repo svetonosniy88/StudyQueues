@@ -147,6 +147,29 @@ def test_creative_close_restores_notes_and_unsaved_draft_on_pause(desktop):
     reopened.close()
 
 
+def test_finished_recovered_creative_session_hides_cached_recovery_button(desktop, app):
+    window, paths = desktop
+    window.start_creative_session()
+    ident = window.session.id
+    note = Path(window.session.path)
+    window.close()
+    reopened = Window(window.state.directory, paths)
+    reopened.show()
+    app.processEvents()
+    assert reopened.recovery_button.isVisible()
+    reopened.restore_session()
+    reopened.finish_session()
+    reopened.show_overview()
+    app.processEvents()
+    assert reopened.recovery is None and reopened.session is None
+    assert not reopened.recovery_button.isVisible()
+    assert reopened.creative_button.isEnabled()
+    assert note.exists() and any(s['id'] == ident for s in reopened.state.history())
+    reopened.reload()
+    assert not reopened.recovery_button.isVisible()
+    reopened.close()
+
+
 def test_creative_finish_records_history_opens_file_and_delete_keeps_file(desktop, monkeypatch):
     window, paths = desktop
     window.start_creative_session()

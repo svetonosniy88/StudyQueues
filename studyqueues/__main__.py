@@ -26,10 +26,11 @@ def main():
     parser = argparse.ArgumentParser(description="Учебные очереди")
     parser.add_argument("--data-dir", type=Path, default=Path(os.environ.get("LOCALAPPDATA", Path.home())) / "StudyQueues")
     parser.add_argument("--demo", action="store_true")
+    parser.add_argument("--classic", action="store_true", help="Открыть прежний интерфейс Markdown-очередей")
     parser.add_argument("--screenshot", type=Path)
     parser.add_argument("--screen", choices=("overview", "work", "stats"), default="overview")
-    parser.add_argument("--width", type=int, default=1160)
-    parser.add_argument("--height", type=int, default=820)
+    parser.add_argument("--width", type=int)
+    parser.add_argument("--height", type=int)
     args = parser.parse_args()
     if args.demo:
         args.data_dir = args.data_dir / "demo"
@@ -39,6 +40,7 @@ def main():
     from PySide6.QtWidgets import QApplication, QMessageBox
     from PySide6.QtGui import QIcon
     from .ui import Window, apply_theme
+    from .workspace_ui import WorkspaceWindow
 
     if sys.platform == "win32":
         import ctypes
@@ -66,10 +68,10 @@ def main():
             if not target.exists():
                 shutil.copyfile(root / "examples" / f"{key}.md", target)
             paths[key] = target
-    else:
+    elif args.classic:
         paths = default_queue_paths(args.data_dir)
     try:
-        window = Window(args.data_dir, paths, force_paths=args.demo)
+        window = (Window if args.classic else WorkspaceWindow)(args.data_dir, paths, force_paths=args.demo)
     except Exception as error:
         message = f"Не удалось открыть приложение. Файлы не заменены.\n{error}"
         if args.screenshot:
@@ -77,13 +79,14 @@ def main():
         else:
             QMessageBox.critical(None, "Учебные очереди", message)
         return 1
-    window.resize(args.width, args.height)
+    if args.width or args.height:
+        window.resize(args.width or window.width(), args.height or window.height())
     window.show()
     if args.screen == "work":
-        window.duration.setValue(25)
+        if args.classic:window.duration.setValue(25)
         window.start_session()
     elif args.screen == "stats":
-        window.show_stats()
+        window.show_stats() if args.classic else window.set_view('history')
     if args.screenshot:
         def capture():
             args.screenshot.parent.mkdir(parents=True, exist_ok=True)

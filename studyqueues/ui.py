@@ -178,6 +178,10 @@ class Window(QMainWindow):
         outer = QVBoxLayout(shell)
         outer.setContentsMargins(1, 1, 1, 1)
         outer.setSpacing(0)
+        spectrum = QFrame()
+        spectrum.setObjectName("spectrum")
+        spectrum.setFixedHeight(3)
+        outer.addWidget(spectrum)
         titlebar = TitleBar()
         self.titlebar = titlebar
         self.window_controls = []
@@ -317,8 +321,9 @@ class Window(QMainWindow):
         self.creative_button = button("Творческий режим", self.start_creative_session, "ghost", "Начать без очереди и плана времени")
         self.creative_button.setEnabled(not self.recovery)
         controls.addWidget(self.creative_button)
-        if self.recovery:
-            controls.addWidget(button("Восстановить занятие", self.restore_session))
+        self.recovery_button = button("Восстановить занятие", self.restore_session)
+        self.recovery_button.setVisible(bool(self.recovery))
+        controls.addWidget(self.recovery_button)
         self.overview_layout.addLayout(controls)
         self.overview_layout.addSpacing(4)
         cards = QHBoxLayout()
@@ -469,6 +474,7 @@ class Window(QMainWindow):
         """Keep existing rows and controls; change only the bounded root window."""
         checked = self.show_done.isChecked()
         self.creative_button.setEnabled(not self.recovery and not self.session)
+        self.recovery_button.setVisible(bool(self.recovery))
         queue_stores = {key: store for key, store in self.stores.items() if key in NAMES}
         if set(self.queue_pagers) != set(queue_stores):
             del self.queue_counts
@@ -1838,14 +1844,23 @@ def apply_theme(app):
             if font.exists():
                 QFontDatabase.addApplicationFont(str(font))
     app.setStyle("Fusion")
+    font = QFont("Segoe UI")
+    font.setPixelSize(16)
+    font.setHintingPreference(QFont.PreferVerticalHinting)
+    font.setStyleStrategy(QFont.PreferAntialias)
+    app.setFont(font)
     palette = QPalette()
-    palette.setColor(QPalette.Window, QColor("#1e1f22"))
-    palette.setColor(QPalette.Base, QColor("#1e1f22"))
-    palette.setColor(QPalette.Text, QColor("#dfe1e5"))
-    palette.setColor(QPalette.WindowText, QColor("#dfe1e5"))
-    palette.setColor(QPalette.Button, QColor("#333539"))
-    palette.setColor(QPalette.ButtonText, QColor("#dfe1e5"))
-    palette.setColor(QPalette.Highlight, QColor("#3574f0"))
+    for role, color in ((QPalette.Window, "#fbf8ff"), (QPalette.Base, "#fffcff"),
+            (QPalette.AlternateBase, "#f3edf9"), (QPalette.Text, "#392b43"),
+            (QPalette.WindowText, "#392b43"), (QPalette.Button, "#fffcff"),
+            (QPalette.ButtonText, "#392b43"), (QPalette.Highlight, "#e9c9f0"),
+            (QPalette.HighlightedText, "#392b43"), (QPalette.PlaceholderText, "#796183"),
+            (QPalette.ToolTipBase, "#fffcff"), (QPalette.ToolTipText, "#392b43"),
+            (QPalette.Link, "#8a3fd1"), (QPalette.Light, "#fffcff"),
+            (QPalette.Mid, "#d5c5e1"), (QPalette.Dark, "#b79dca")):
+        palette.setColor(role, QColor(color))
+    for role in (QPalette.Text, QPalette.WindowText, QPalette.ButtonText):
+        palette.setColor(QPalette.Disabled, role, QColor("#a092a8"))
     app.setPalette(palette)
     check = Path(__file__).with_name("check.svg").as_posix()
     app.setStyleSheet(Path(__file__).with_name("theme.qss").read_text(encoding="utf-8") + f'\nQCheckBox::indicator:checked {{ image: url("{check}"); }}')

@@ -71,6 +71,17 @@ class NativeFrame(QAbstractNativeEventFilter):
         self.user32.SetWindowLongPtrW(hwnd, -16, style | FRAME_STYLE)
         # Inform DWM of the native frame while WM_NCCALCSIZE keeps our title bar.
         self.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0020 | 0x0001 | 0x0002 | 0x0004 | 0x0010)
+        if self.window.objectName() == 'StudyQueuesWorkspace':
+            # Official Windows 11 DWM attributes; older Windows can reject them.
+            # https://learn.microsoft.com/windows/apps/desktop/modernize/ui/apply-rounded-corners
+            try:
+                dwm = ctypes.WinDLL('dwmapi')
+                dwm.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+                for attribute, value in ((20, 1), (33, 2)):
+                    setting = ctypes.c_int(value)
+                    dwm.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(setting), ctypes.sizeof(setting))
+            except OSError:
+                pass
 
     def uninstall(self):
         if self.installed:

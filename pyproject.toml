@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "studyqueues"
-version = "0.2.9"
-description = "Local Markdown study queues and focus sessions"
+version = "1.0.0"
+description = "Local task workspace, focus sessions and reversible time tracking"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 license = "MIT"
@@ -23,7 +23,7 @@ test = ["pytest==9.1.1"]
 packages = ["studyqueues"]
 
 [tool.setuptools.package-data]
-studyqueues = ["theme.qss", "check.svg", "app.svg", "app.ico"]
+studyqueues = ["theme.qss", "workspace_dark.qss", "check.svg", "chevron-down.svg", "app.svg", "app.ico"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
